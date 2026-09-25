@@ -10,7 +10,7 @@ import {
   loadMockDataIntoState,
   checkPlayerRestConflict,
   checkAndGenerateNextRound
-} from './state.js?v=49';
+} from './state.js?v=58';
 
 import { 
   renderPlayerSearch, 
@@ -26,7 +26,7 @@ import {
   initAudio,
   playNotificationChime,
   speakSummon
-} from './ui.js?v=49';
+} from './ui.js?v=81';
 
 let state = null;
 let activeView = 'player-view';
@@ -37,12 +37,21 @@ let isAppInitialized = false;
 
 // Initialize the App
 function init() {
+
+  
+
+
+  
+
   initSystemState((newState) => {
     state = newState;
     
     // First time initialization
     if (!isAppInitialized) {
       isAppInitialized = true;
+
+      
+
       
       // Cache initially called matches so we don't announce them upon page load
       state.matches.forEach(m => {
@@ -52,6 +61,15 @@ function init() {
       });
 
       setupEventListeners();
+      
+      // Populate setup inputs with saved configs
+      if (state.configs) {
+        if (state.courts && state.courts.length) document.getElementById('setup-court-count').value = state.courts.length;
+        if (state.configs.restBufferMinutes) document.getElementById('setup-rest-buffer').value = state.configs.restBufferMinutes;
+        if (state.configs.summonLimitMinutes) document.getElementById('setup-summon-limit').value = state.configs.summonLimitMinutes;
+        if (state.configs.giftClaimCode) document.getElementById('setup-gift-claim-code').value = state.configs.giftClaimCode;
+        if (state.configs.adminPassword) document.getElementById('setup-admin-password').value = state.configs.adminPassword;
+      }
       
       // Periodic update loop (every 1 second) for timers
       setInterval(tickTimers, 1000);
@@ -84,11 +102,14 @@ function renderAll() {
   renderStaffDashboard(state);
   renderRefereePanel(state);
   renderSetupPlayers(state);
+    window.renderDrawOrderButtons();
+
   renderSetupCourtMapBuilder(state);
 }
 
 // Local save state and dispatch render
 function saveAndRender() {
+  if(window.renderDrawOrderButtons) window.renderDrawOrderButtons();
   saveState(state);
   renderAll();
 }
@@ -179,6 +200,34 @@ window.addEventListener('tournament-state-updated', (event) => {
 
 // Setup Listeners
 function setupEventListeners() {
+
+  // Global Announcement
+  const btnPublishAnnouncement = document.getElementById('btn-publish-announcement');
+  if (btnPublishAnnouncement) {
+    btnPublishAnnouncement.addEventListener('click', () => {
+      const msg = document.getElementById('staff-announcement-input').value.trim();
+      if (!state.configs) state.configs = {};
+      state.configs.announcementMessage = msg;
+      saveAndRender();
+      if (msg) {
+        alert('發布成功！所有選手將立刻看到此廣播。');
+      } else {
+        alert('已關閉大會廣播。');
+      }
+    });
+  }
+
+  const btnClearAnnouncement = document.getElementById('btn-clear-announcement');
+  if (btnClearAnnouncement) {
+    btnClearAnnouncement.addEventListener('click', () => {
+      document.getElementById('staff-announcement-input').value = '';
+      if (!state.configs) state.configs = {};
+      state.configs.announcementMessage = '';
+      saveAndRender();
+      alert('已關閉大會廣播。');
+    });
+  }
+
   // 1. Navigation / View Switcher
   // (Logo click listener removed here, combined below)
   
@@ -258,6 +307,8 @@ function setupEventListeners() {
           if (confirm("您目前已處於「系統後台模式」。是否要登出並恢復一般選手視角？")) {
             localStorage.removeItem('admin_auth');
             localStorage.removeItem('referee_auth');
+            localStorage.removeItem('auth_token');
+            window.location.reload();
             
             document.querySelectorAll('.admin-only').forEach(btn => {
               btn.style.display = 'none';
@@ -307,7 +358,7 @@ function setupEventListeners() {
         localStorage.setItem('referee_auth', 'true');
         document.getElementById('auth-modal').classList.add('hidden');
         checkAuth();
-        alert("✅ 裁判驗證成功！已進入防呆裁判專屬控制台。");
+        alert("✅ 巡場驗證成功！已進入巡場專屬控制台。");
       } else {
         alert("密碼錯誤，請重新輸入。");
         document.getElementById('auth-password').value = '';
@@ -358,11 +409,16 @@ function setupEventListeners() {
     const btnGift = e.target.closest('#btn-claim-gift');
     
     if (btnCheckin) {
-      const playerId = btnCheckin.getAttribute('data-id');
       const eventName = btnCheckin.getAttribute('data-event');
+      if (!state.configs || !state.configs.eventsCheckIn || !state.configs.eventsCheckIn[eventName]) {
+        alert('大會目前尚未開放【' + eventName + '】報到，請稍候！');
+        return;
+      }
+      const playerId = btnCheckin.getAttribute('data-id');
+      // eventName already declared
       const playerObj = state.players.find(p => p.id === playerId);
       if (playerObj) {
-        const confirmMsg = `⚠️ 報到注意事項 ⚠️\n\n您即將進行【${eventName}】的報到手續。\n報到完成後，系統將隨時開始為您安排賽程，請確認您已在現場並準備好出賽。\n\n確定要現在進行報到嗎？`;
+        const confirmMsg = `⚠️ 報到注意事項 (Check-in Notice) ⚠️\n\n您即將進行【${eventName}】的報到手續。\nYou are about to check in for 【${eventName}】.\n\n報到完成後，系統將隨時開始為您安排賽程，請確認您已在現場並準備好出賽。\nOnce checked in, the system may schedule your match at any time. Please ensure you are on-site and ready to play.\n\n確定要現在進行報到嗎？\nAre you sure you want to check in now?`;
         if (!window.confirm(confirmMsg)) return;
         
         const inputPhone = window.prompt(`為了保護您的隱私，請輸入【${playerObj.name}}報名時留的「聯絡電話」以完成身分驗證：`);
@@ -371,7 +427,9 @@ function setupEventListeners() {
         const storedPhone = (playerObj.phone || '').trim();
         const providedPhone = inputPhone.trim();
         
-        if (providedPhone === storedPhone) {
+        // 允許輸入其中一支號碼即可 (處理雙打 09xx / 09xx 的情況)
+        const phoneMatch = storedPhone.split(/[/,、]/).map(s => s.trim()).some(p => p && p === providedPhone);
+        if (phoneMatch || providedPhone === storedPhone || providedPhone === "0000") { // 0000 為大會後門免密碼
           if (!playerObj.checkInStatus) playerObj.checkInStatus = {};
           playerObj.checkInStatus[eventName] = true;
           
@@ -441,14 +499,26 @@ function setupEventListeners() {
 
   // 5. Setup View Handlers
   // Update Courts
+  document.getElementById('btn-save-configs').addEventListener('click', () => {
+    state.configs.restBufferMinutes = parseInt(document.getElementById('setup-rest-buffer').value) || 30;
+    state.configs.summonLimitMinutes = parseInt(document.getElementById('setup-summon-limit').value) || 10;
+    state.configs.giftClaimCode = document.getElementById('setup-gift-claim-code').value || '8888';
+    state.configs.adminPassword = document.getElementById('setup-admin-password').value || 'admin';
+    // Update local token so they don't get locked out immediately
+    if (localStorage.getItem('admin_auth') === 'true') {
+      localStorage.setItem('auth_token', state.configs.adminPassword);
+    }
+    saveAndRender();
+    alert("✅ 參數設定已成功儲存！");
+  });
+
   document.getElementById('btn-update-courts').addEventListener('click', () => {
     const val = parseInt(document.getElementById('setup-court-count').value);
     if (val >= 1 && val <= 10) {
       // Re-create courts keeping occupied ones if possible, or reset
       const newCourts = [];
       for (let i = 1; i <= val; i++) {
-        const letter = String.fromCharCode(64 + i);
-        const courtName = `${letter}球場 (Court ${letter})`;
+        const courtName = `第${i}球場 (Court ${i})`;
         const existing = state.courts.find(c => c.id === `c${i}`);
         if (existing) {
           existing.name = courtName;
@@ -473,8 +543,16 @@ function setupEventListeners() {
 
 
   // Reset all
-  document.getElementById('btn-reset-all').addEventListener('click', () => {
-    if (confirm("此動作將刪除全部選手、球場與賽程數據，無法復原，是否確定？")) {
+  document.getElementById('btn-reset-all').addEventListener('click', (e) => {
+    e.preventDefault();
+    const superPassword = 'superadmin'; // Independent reset password
+    const pwd = prompt("⚠️ 警告：此為危險操作，將刪除所有賽程與選手資料。\n請輸入【最高權限密碼】以授權：");
+    if (pwd !== superPassword) {
+      if (pwd !== null) alert("密碼錯誤，拒絕存取。");
+      return;
+    }
+    
+    if (confirm("最後確認：此動作將刪除全部選手、球場與賽程數據，完全無法復原，是否確定？")) {
       state = getInitialState();
       saveAndRender();
       alert("系統已重置為空白狀態。");
@@ -482,81 +560,7 @@ function setupEventListeners() {
   });
 
   // Parse and Import players
-  document.getElementById('btn-import-players').addEventListener('click', () => {
-    const importText = document.getElementById('setup-player-import').value;
-    const lines = importText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    
-    // Parse groups
-    const eventsText = document.getElementById('setup-events-list').value;
-    const currentEvents = eventsText.split('\n').map(e => e.trim()).filter(e => e.length > 0);
-    state.events = currentEvents;
-
-    let successCount = 0;
-    
-    lines.forEach(line => {
-      // Format: Name, Phone, Group1;Group2, Gift (supports commas, tabs, full-width punctuation)
-      const parts = line.split(/[,\t，、]/).map(p => p.trim());
-      const name = parts[0];
-      if (!name) return; // Skip empty rows or invalid formatting
-      
-      const phone = parts[1] || '';
-      const pEvents = parts[2] ? parts[2].split(/[;；]/).map(e => e.trim()).filter(e => e.length > 0) : [];
-      const gift = parts[3] || '無';
-        
-        if (playerObj) {
-          // Update
-          playerObj.phone = phone;
-          playerObj.events = [...new Set([...playerObj.events, ...pEvents])];
-          playerObj.gift = gift;
-          
-          if (!playerObj.checkInStatus) playerObj.checkInStatus = {};
-          playerObj.events.forEach(ev => {
-            if (playerObj.checkInStatus[ev] === undefined) playerObj.checkInStatus[ev] = playerObj.checkedIn || false;
-          });
-        } else {
-          // Insert
-          const checkInStatus = {};
-          pEvents.forEach(ev => checkInStatus[ev] = false);
-          
-          state.players.push({
-            id: 'p_' + Math.random().toString(36).substr(2, 9),
-            name: name,
-            phone: phone,
-            events: pEvents,
-            gift: gift,
-            hasPhotography: hasPhotography,
-            utr: utr,
-            checkedIn: false, // legacy
-            checkInStatus: checkInStatus,
-            giftClaimed: false,
-            lastMatchEndedAt: null
-          });
-        }
-        
-        // Auto-register new events
-        pEvents.forEach(e => {
-          if (!state.events.includes(e)) {
-            state.events.push(e);
-          }
-        });
-        successCount++;
-    });
-
-    saveAndRender();
-    if (confirm(`成功解析並匯入 ${successCount} 名選手。\n是否要讓系統立刻自動為所有組別「生成淘汰賽籤表」並排定對戰組合？\n(注意：這會覆蓋目前的賽事圖與對戰紀錄)`)) {
-      state.courts.forEach(c => {
-        c.status = 'idle';
-        c.currentMatchId = null;
-      });
-      state.matches = [];
-      state.events.forEach(eventName => {
-        const shouldShuffle = document.getElementById('setup-random-shuffle').checked;
-        generateBracket(state, eventName, shouldShuffle);
-      });
-      saveAndRender();
-      alert("太棒了！已自動為所有選手排好籤表與對戰組合，請前往「選手看板」查看！");
-    }
-  });
+  
 
 
   // Manual Add Player Button
@@ -586,6 +590,7 @@ function setupEventListeners() {
     const gift = document.getElementById('player-form-gift').value;
     const hasPhotography = document.getElementById('player-form-photography').value === 'yes';
     const utr = document.getElementById('player-form-utr').value;
+    const utrName = document.getElementById('player-form-utrName').value;
     
     const checkboxes = document.querySelectorAll('input[name="player-modal-events"]:checked');
     const selectedEvents = Array.from(checkboxes).map(cb => cb.value);
@@ -653,7 +658,7 @@ function setupEventListeners() {
       state.matches = [];
 
       state.events.forEach(eventName => {
-        const shouldShuffle = document.getElementById('setup-random-shuffle').checked;
+        const shouldShuffle = true; // Always shuffle since we removed the manual toggle
         generateBracket(state, eventName, shouldShuffle);
       });
       saveAndRender();
@@ -720,6 +725,7 @@ function setupEventListeners() {
           document.getElementById('player-form-gift').value = p.gift || '無';
           document.getElementById('player-form-photography').value = p.hasPhotography ? 'yes' : 'no';
           document.getElementById('player-form-utr').value = p.utr || '';
+          document.getElementById('player-form-utrName').value = p.utrName || '';
           
           // Checkboxes
           const chkGroup = document.getElementById('player-form-events');
@@ -789,6 +795,39 @@ function setupEventListeners() {
         playerObj.giftClaimed = false; // reset gift if completely unchecked
       }
       saveAndRender();
+    } else if (action === 'forfeit-event') {
+      const ev = btn.getAttribute('data-event');
+      if (!window.confirm(`確認要將選手在【${ev}】判定為「未到棄賽」嗎？\n這將自動淘汰選手，並讓對手不戰而勝晉級！`)) {
+        return;
+      }
+      
+      if (!playerObj.checkInStatus) playerObj.checkInStatus = {};
+      playerObj.checkInStatus[ev] = 'forfeited';
+      
+      // Auto-advance opponent in the bracket
+      const matches = state.matches.filter(m => m.event === ev && (m.status === 'scheduled' || m.status === 'live') && (m.player1Id === playerObj.id || m.player2Id === playerObj.id));
+      matches.forEach(m => {
+        if (m.status === 'live') {
+           const court = state.courts.find(c => c.currentMatchId === m.id);
+           if (court) { court.status = 'idle'; court.currentMatchId = null; }
+        }
+        
+        m.status = 'defaulted';
+        m.defaultedPlayerId = playerObj.id;
+        
+        // If the other player is already known, advance them
+        const opponentId = m.player1Id === playerObj.id ? m.player2Id : m.player1Id;
+        if (opponentId && opponentId !== 'BYE') {
+          m.winnerId = opponentId;
+          advanceWinner(m, opponentId, state.matches);
+        } else if (opponentId === 'BYE') {
+          // If the opponent is BYE, the BYE advances... which just cascades
+          m.winnerId = 'BYE';
+          advanceWinner(m, 'BYE', state.matches);
+        }
+      });
+      
+      saveAndRender();
     } else if (action === 'toggle-gift') {
       playerObj.giftClaimed = !playerObj.giftClaimed;
       saveAndRender();
@@ -801,6 +840,20 @@ function setupEventListeners() {
   });
 
   // Auto-schedule matches
+  // Check-in Toggle Logic
+  // Per-Event Check-in Toggle Logic
+  window.toggleEventCheckIn = function(ev) {
+    if (!state.configs) state.configs = {};
+    if (!state.configs.eventsCheckIn) state.configs.eventsCheckIn = {};
+    const currentState = state.configs.eventsCheckIn[ev] === true;
+    state.configs.eventsCheckIn[ev] = !currentState;
+    if (!currentState) {
+       // Just opened
+       alert(`✅ 已開放【${ev}】報到！`);
+    }
+    saveAndRender();
+  };
+
   document.getElementById('btn-auto-schedule').addEventListener('click', () => {
     const scheduled = autoScheduleMatches(state);
     if (scheduled) {
@@ -981,8 +1034,20 @@ function setupEventListeners() {
         }
 
         // Set rest end for winner (no rest really needed for default, but updates state)
-        const winnerObj = state.players.find(p => p.id === winnerId);
-        if (winnerObj) winnerObj.lastMatchEndedAt = match.endedAt;
+
+    const updateRestTimeForPlayerAndAliases = (playerObj, time) => {
+      if (!playerObj) return;
+      state.players.forEach(p => {
+        if (p.name.includes(playerObj.name) || playerObj.name.includes(p.name)) {
+          p.lastMatchEndedAt = time;
+        }
+      });
+    };
+
+        const p1Obj = state.players.find(p => p.id === match.player1Id);
+        const p2Obj = state.players.find(p => p.id === match.player2Id);
+        if (p1Obj) updateRestTimeForPlayerAndAliases(p1Obj, match.endedAt);
+        if (p2Obj) updateRestTimeForPlayerAndAliases(p2Obj, match.endedAt);
 
         // Advance bracket
         advanceWinner(match, winnerId, state.matches);
@@ -1149,8 +1214,18 @@ function setupEventListeners() {
     // Set player rest timers
     const p1Obj = state.players.find(p => p.id === match.player1Id);
     const p2Obj = state.players.find(p => p.id === match.player2Id);
-    if (p1Obj) p1Obj.lastMatchEndedAt = match.endedAt;
-    if (p2Obj) p2Obj.lastMatchEndedAt = match.endedAt;
+
+    const updateRestTimeForPlayerAndAliases = (playerObj, time) => {
+      if (!playerObj) return;
+      state.players.forEach(p => {
+        if (p.name.includes(playerObj.name) || playerObj.name.includes(p.name)) {
+          p.lastMatchEndedAt = time;
+        }
+      });
+    };
+
+    if (p1Obj) updateRestTimeForPlayerAndAliases(p1Obj, match.endedAt);
+    if (p2Obj) updateRestTimeForPlayerAndAliases(p2Obj, match.endedAt);
 
     // Advance winner in tournament
     advanceWinner(match, winnerId, state.matches);
@@ -1198,3 +1273,430 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+
+// --- CSV Import Logic ---
+
+  
+
+window.handleCSVUpload = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const text = evt.target.result;
+      const parseCSV = (text) => {
+        const rows = [];
+        let currentRow = [];
+        let currentField = '';
+        let inQuotes = false;
+        for (let i = 0; i < text.length; i++) {
+          const char = text[i];
+          const nextChar = text[i+1];
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') { currentField += '"'; i++; }
+            else { inQuotes = !inQuotes; }
+          } else if (char === ',' && !inQuotes) {
+            currentRow.push(currentField.trim());
+            currentField = '';
+          } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+            currentRow.push(currentField.trim());
+            if (currentRow.length > 1 || currentRow[0] !== '') { rows.push(currentRow); }
+            currentRow = [];
+            currentField = '';
+            if (char === '\r') i++;
+          } else {
+            if (char !== '\r' || inQuotes) { currentField += char; }
+          }
+        }
+        if (currentField !== '' || currentRow.length > 0) {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+        }
+        return rows;
+      };
+
+      const rows = parseCSV(text);
+      if (rows.length < 2) return alert('CSV 檔案格式錯誤或為空！');
+      
+                    let nameIdx = -1, phoneIdx = -1, singleEventIdx = -1, doubleEventIdx = -1, giftIdx = -1, photoIdx = -1, utrIdx = -1, utrNameIdx = -1;
+              let headerRowIdx = -1;
+              
+              for (let r = 0; r < Math.min(10, rows.length); r++) {
+                const headers = rows[r];
+                headers.forEach((h, idx) => {
+                  const lower = h.toLowerCase();
+                  if (nameIdx === -1 && (lower.includes('選手姓名') || lower.includes('姓名') || lower.includes('名字'))) nameIdx = idx;
+                  if (phoneIdx === -1 && (lower.includes('連絡電話') || lower.includes('聯絡電話') || lower.includes('電話') || lower.includes('手機'))) phoneIdx = idx;
+                  if (singleEventIdx === -1 && (lower.includes('報名級別') || lower.includes('單打每項') || lower.includes('單打'))) singleEventIdx = idx;
+                  if (doubleEventIdx === -1 && (lower.includes('雙打項目') || (lower.includes('雙打') && !lower.includes('夥伴')))) doubleEventIdx = idx;
+                  if (giftIdx === -1 && (lower.includes('商品') || lower.includes('參加獎') || lower.includes('衣服') || lower.includes('紀念品') || lower.includes('參賽禮'))) giftIdx = idx;
+                  if (photoIdx === -1 && (lower.includes('攝影') || lower.includes('照片') || lower.includes('photo'))) photoIdx = idx;
+                  if (utrIdx === -1 && (lower.includes('utr 分數') || lower.includes('utr分數') || lower.includes('積分'))) utrIdx = idx;
+                  if (utrNameIdx === -1 && (lower.includes('utr 帳號') || lower.includes('utr帳號') || lower.includes('utr名稱') || lower.includes('utr name'))) utrNameIdx = idx;
+                });
+                
+                if (nameIdx !== -1) {
+                  headerRowIdx = r;
+                  break;
+                }
+              }
+              
+              if (headerRowIdx === -1) return alert('找不到「姓名」欄位！請確認 CSV 中包含「姓名」或「選手姓名」字眼。');
+
+              let importedCount = 0;
+              for (let i = headerRowIdx + 1; i < rows.length; i++) {
+        const cols = rows[i];
+        if (!cols || cols.length === 0) continue;
+        const name = cols[nameIdx];
+        if (!name) continue;
+        
+        let phone = phoneIdx >= 0 ? cols[phoneIdx] : '';
+        let gift = giftIdx >= 0 ? cols[giftIdx] : '無';
+        let utr = utrIdx >= 0 ? cols[utrIdx] : '';
+        let utrName = utrNameIdx >= 0 ? cols[utrNameIdx] : '';
+        let hasPhoto = photoIdx >= 0 && cols[photoIdx] ? (cols[photoIdx].includes('是') || cols[photoIdx].includes('有') || cols[photoIdx].toLowerCase().includes('yes') || cols[photoIdx].includes('需要') || cols[photoIdx].includes('加購')) : false;
+        
+        let events = [];
+        if (singleEventIdx >= 0 && cols[singleEventIdx]) {
+          const evs = cols[singleEventIdx].split(/[,、，\n]/).map(e => e.trim()).filter(e => e);
+          events = events.concat(evs);
+        }
+        if (doubleEventIdx >= 0 && cols[doubleEventIdx]) {
+          const evs = cols[doubleEventIdx].split(/[,、，\n]/).map(e => e.trim()).filter(e => e);
+          events = events.concat(evs);
+        }
+        events.forEach(ev => {
+           if (!state.events.includes(ev)) state.events.push(ev);
+        });
+        
+        const existing = state.players.find(p => p.name === name && p.phone === phone);
+        if (existing) {
+           existing.events = events;
+           existing.gift = gift;
+           existing.hasPhotography = hasPhoto;
+           existing.utr = utr;
+           existing.utrName = utrName;
+        } else {
+           state.players.push({
+             id: 'p_' + Date.now() + Math.random().toString(36).substr(2, 5),
+             name: name,
+             phone: phone,
+             events: events,
+             gift: gift,
+             hasPhotography: hasPhoto,
+             utr: utr,
+             utrName: utrName,
+             checkedIn: false,
+             checkInStatus: {},
+             giftClaimed: false
+           });
+        }
+        importedCount++;
+      }
+      
+      saveState(state);
+      e.target.value = ''; // clear input
+      renderSetupPlayers(state);
+      renderStaffDashboard(state);
+      alert(`成功匯入/更新 ${importedCount} 筆選手資料！`);
+    } catch (err) {
+      alert("匯入失敗：" + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+};
+
+
+window.openDrawOrderModal = function(eventName) {
+  document.getElementById('draw-order-event-name').innerText = eventName;
+  const listContainer = document.getElementById('draw-order-list');
+  listContainer.innerHTML = '';
+  
+  // Get players for this event
+  let eventPlayers = state.players.filter(p => p.events.includes(eventName));
+  
+  // Calculate Target Bracket Size to determine if BYEs are needed
+  const numPlayers = eventPlayers.length;
+  let bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers > 0 ? numPlayers : 1)));
+  if (state.drawSizes && state.drawSizes[eventName]) {
+    const forcedSize = state.drawSizes[eventName];
+    if (forcedSize >= numPlayers) {
+      bracketSize = forcedSize;
+    }
+  }
+
+  // Inject BYEs
+  const numByes = bracketSize - numPlayers;
+  for (let i = 0; i < numByes; i++) {
+    eventPlayers.push({ id: 'BYE_' + i, name: '空籤 (BYE)' }); // Use unique BYE ids for SortableJS DOM mapping
+  }
+
+  // Sort them if there is a saved seed order
+  if (state.drawSeeds && state.drawSeeds[eventName]) {
+    const seedOrder = state.drawSeeds[eventName];
+    eventPlayers.sort((a, b) => {
+      // For BYEs, check if their prefix is in the seed order, or map them dynamically
+      const aId = a.id.startsWith('BYE') ? 'BYE' : a.id;
+      const bId = b.id.startsWith('BYE') ? 'BYE' : b.id;
+      
+      // If the array has exact duplicates like 'BYE', indexOf only finds the first.
+      // So we map them by exact index in the seedOrder if we can.
+      // Actually, it's safer to just rebuild the array based on seedOrder!
+    });
+    
+    // Better sorting strategy: Rebuild array exactly matching seedOrder
+    const sorted = [];
+    const byePool = eventPlayers.filter(p => p.id.startsWith('BYE'));
+    const playerPool = eventPlayers.filter(p => !p.id.startsWith('BYE'));
+    
+    seedOrder.forEach(id => {
+      if (id === 'BYE' && byePool.length > 0) {
+        sorted.push(byePool.shift());
+      } else {
+        const pIdx = playerPool.findIndex(p => p.id === id);
+        if (pIdx !== -1) {
+          sorted.push(playerPool[pIdx]);
+          playerPool.splice(pIdx, 1);
+        }
+      }
+    });
+    // Append any remaining (if they weren't in seedOrder for some reason)
+    eventPlayers = [...sorted, ...playerPool, ...byePool];
+  }
+  
+  eventPlayers.forEach((p, index) => {
+    const item = document.createElement('div');
+    item.className = 'draw-order-item';
+    item.dataset.id = p.id;
+    item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; color: var(--primary);';
+    
+    item.style.cursor = 'grab';
+    item.innerHTML = `
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px;" class="item-index">${index + 1}.</strong>
+        <span>${p.name}</span>
+      </div>
+      <div style="color: #94a3b8; cursor: grab;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </div>
+    `;
+    listContainer.appendChild(item);
+  });
+  
+  // Initialize SortableJS if available
+  if (window.Sortable) {
+    if (listContainer._sortable) {
+      listContainer._sortable.destroy();
+    }
+    listContainer._sortable = Sortable.create(listContainer, {
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: function () {
+        Array.from(listContainer.children).forEach((child, i) => {
+          child.querySelector('.item-index').innerText = `${i + 1}.`;
+        });
+      }
+    });
+  }
+
+  document.getElementById('draw-order-modal').classList.remove('hidden');
+};
+
+window.moveDrawItem = function(btn, direction) {
+  const item = btn.closest('.draw-order-item');
+  const container = item.parentNode;
+  const siblings = Array.from(container.children);
+  const index = siblings.indexOf(item);
+  
+  if (direction === -1 && index > 0) {
+    container.insertBefore(item, siblings[index - 1]);
+  } else if (direction === 1 && index < siblings.length - 1) {
+    container.insertBefore(item, siblings[index + 2] || null);
+  }
+  
+  // Update numbers
+  Array.from(container.children).forEach((child, i) => {
+    child.querySelector('.item-index').innerText = `${i + 1}.`;
+  });
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnSaveDraw = document.getElementById('btn-save-draw-order');
+  if (btnSaveDraw) {
+    btnSaveDraw.addEventListener('click', () => {
+      const eventName = document.getElementById('draw-order-event-name').innerText;
+      const items = Array.from(document.getElementById('draw-order-list').children);
+      const orderedIds = items.map(item => item.dataset.id);
+      
+      if (!state.drawSeeds) state.drawSeeds = {};
+      state.drawSeeds[eventName] = orderedIds;
+      
+      // Regenerate bracket for this specific event without shuffling
+      generateBracket(state, eventName, false);
+      
+      saveAndRender();
+      document.getElementById('draw-order-modal').classList.add('hidden');
+      alert(`已成功儲存 ${eventName} 的籤表順序並重新生成籤表！`);
+    });
+  }
+});
+
+
+function renderDrawOrderButtons() {
+  const container = document.getElementById('draw-order-buttons-container');
+  if (!container) return;
+  container.innerHTML = '';
+  state.events.forEach(ev => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; background: #f8f9fa; padding: 0.5rem; border-radius: 4px; width: 100%;';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.innerText = ev;
+    nameSpan.style.flex = '1';
+    nameSpan.style.fontWeight = 'bold';
+    nameSpan.style.fontSize = '0.9rem';
+    
+    const sizeLabel = document.createElement('label');
+    sizeLabel.innerText = '固定籤數:';
+    sizeLabel.style.fontSize = '0.8rem';
+    sizeLabel.style.margin = '0';
+    
+    const sizeInput = document.createElement('select');
+    sizeInput.className = 'form-control';
+    sizeInput.style.width = '80px';
+    sizeInput.style.padding = '0.2rem';
+    const options = [
+      { val: "", text: "自動設定" },
+      { val: "4", text: "4籤" },
+      { val: "8", text: "8籤" },
+      { val: "16", text: "16籤" },
+      { val: "32", text: "32籤" },
+      { val: "64", text: "64籤" },
+      { val: "128", text: "128籤" }
+    ];
+    const currentVal = (state.drawSizes && state.drawSizes[ev]) ? String(state.drawSizes[ev]) : "";
+    sizeInput.innerHTML = "";
+    options.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.val;
+      opt.text = o.text;
+      if (o.val === currentVal) {
+        opt.selected = true;
+      }
+      sizeInput.appendChild(opt);
+    });
+    sizeInput.onchange = (e) => {
+      if (!state.drawSizes) state.drawSizes = {};
+      if (e.target.value) {
+        state.drawSizes[ev] = parseInt(e.target.value, 10);
+      } else {
+        delete state.drawSizes[ev];
+      }
+      // Removed saveAndRender() here to prevent Safari from destroying the dropdown while it's still being interacted with
+      // We manually save state instead
+      saveState(state);
+    };
+    
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-accent';
+    btn.innerText = '🎯 籤表排序';
+    btn.onclick = () => window.openDrawOrderModal(ev);
+    
+    row.appendChild(nameSpan);
+    row.appendChild(sizeLabel);
+    row.appendChild(sizeInput);
+    row.appendChild(btn);
+    container.appendChild(row);
+  });
+}
+window.renderDrawOrderButtons = renderDrawOrderButtons;
+
+  // Global handler for admin match options in bracket
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action="admin-match-options"]');
+    if (!btn) return;
+    
+    const pwd = prompt("請輸入系統管理密碼以授權編輯：");
+    const adminPassword = (state.configs && state.configs.adminPassword) ? state.configs.adminPassword : 'admin';
+    if (pwd !== adminPassword) {
+      if (pwd !== null) alert("密碼錯誤，拒絕存取。");
+      return;
+    }
+
+    const matchId = btn.getAttribute('data-match-id');
+    const match = state.matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    const opt = prompt(`請選擇要執行的操作 (輸入數字)：\n1. 撤銷比賽 (退回待排賽程)\n2. 修改比分 (重新登錄比分)`);
+    if (opt === '1') {
+      if (!confirm('確定要撤銷這場比賽的結果（包含比分與棄賽裁定），並將其退回「待排賽程」嗎？')) return;
+      
+      // Check if next match is already touched
+      if (match.nextMatchId) {
+        const nextMatch = state.matches.find(m => m.id === match.nextMatchId);
+        if (nextMatch && nextMatch.status !== 'scheduled') {
+          alert("❌ 無法撤銷！因為晉級後的下一輪比賽已經開始或結束。\n請先撤銷下一輪的比賽結果。");
+          return;
+        }
+        
+        // Remove winner from next match
+        if (nextMatch) {
+          if (match.p1OrP2 === 'p1') {
+            nextMatch.player1Id = null;
+          } else if (match.p1OrP2 === 'p2') {
+            nextMatch.player2Id = null;
+          }
+        }
+      }
+      
+      // Check if any player was marked as forfeit in check-in and reset them
+      if (match.defaultedPlayerId && match.defaultedPlayerId !== 'BOTH') {
+         const p = state.players.find(p => p.id === match.defaultedPlayerId);
+         if (p && p.checkInStatus && p.checkInStatus[match.event] === 'forfeited') {
+            p.checkInStatus[match.event] = false;
+         }
+      }
+
+      match.status = 'scheduled';
+      match.winnerId = null;
+      match.defaultedPlayerId = null;
+      match.score = { player1: [], player2: [] };
+      match.endedAt = null;
+      
+      saveAndRender();
+      alert("✅ 比賽結果已撤銷，並退回待排賽程！");
+      
+    } else if (opt === '2') {
+      // Edit score
+      if (match.nextMatchId) {
+         const nextMatch = state.matches.find(m => m.id === match.nextMatchId);
+         if (nextMatch && nextMatch.status !== 'scheduled') {
+           if (!confirm("⚠️ 警告：晉級後的下一輪比賽已經開始或結束！\n如果您修改比分導致「獲勝者改變」，將會破壞後續賽程邏輯。\n\n如果您只是要微調既有獲勝者的比分數字，請點「確定」繼續。")) {
+              return;
+           }
+         }
+      }
+      
+      const p1Name = getPlayerNameById(state, match.player1Id);
+      const p2Name = getPlayerNameById(state, match.player2Id);
+      
+      document.getElementById('score-form-match-id').value = match.id;
+      document.getElementById('score-team1-name').innerText = p1Name;
+      document.getElementById('score-team2-name').innerText = p2Name;
+      
+      const s = match.score || {};
+      const s1 = s.player1 || [];
+      const s2 = s.player2 || [];
+      document.getElementById('score-s1-p1').value = s1[0] !== undefined ? s1[0] : '';
+      document.getElementById('score-s1-p2').value = s2[0] !== undefined ? s2[0] : '';
+      document.getElementById('score-s2-p1').value = s1[1] !== undefined ? s1[1] : '';
+      document.getElementById('score-s2-p2').value = s2[1] !== undefined ? s2[1] : '';
+      document.getElementById('score-s3-p1').value = s1[2] !== undefined ? s1[2] : '';
+      document.getElementById('score-s3-p2').value = s2[2] !== undefined ? s2[2] : '';
+      
+      document.getElementById('score-modal').classList.remove('hidden');
+    }
+  });

@@ -4,9 +4,55 @@ const STORAGE_KEY = 'tennis_tournament_state';
 
 // Initial default state configuration
 const DEFAULT_EVENTS = [
-  "男子單打 (Men's Singles)",
-  "女子單打 (Women's Singles)",
-  "混合雙打 (Mixed Doubles)"
+  "男單 UTR 2.0",
+  "男單 UTR 3.0",
+  "breakpoint® 男學員組 UTR 3.0",
+  "男單 UTR 4.0",
+  "男單 UTR 5.0",
+  "男單 UTR 6.0",
+  "男單 知天命 UTR 6.0",
+  "男單 UTR 7.0",
+  "男單 UTR 8.0",
+  "男單 U12",
+  "男單 U14",
+  "男單 U16",
+  "男單 公開組",
+  "女單 UTR 2.0",
+  "女單 UTR 3.0",
+  "breakpoint® 女學員組 UTR 3.0",
+  "女單 UTR 4.0",
+  "女單 UTR 5.0",
+  "女單 知天命 UTR 6.0",
+  "女單 UTR 6.0",
+  "女單 UTR 7.0",
+  "女單 U12",
+  "女單 U14",
+  "女單 U16",
+  "女單 公開組",
+  "U8 綠球組",
+  "U10 綠球組",
+  "男雙 UTR 2.0",
+  "男雙 UTR 4.0",
+  "男雙 UTR 5.0",
+  "男雙 UTR 6.0",
+  "男雙 UTR 7.0",
+  "男雙 公開組",
+  "女雙 UTR 2.0",
+  "女雙 UTR 3.0",
+  "女雙 UTR 4.0",
+  "女雙 UTR 5.0",
+  "女雙 UTR 6.0",
+  "女雙 UTR 7.0",
+  "女雙 公開組",
+  "混雙 UTR 2.0",
+  "混雙 UTR 3.0",
+  "混雙 UTR 4.0",
+  "混雙 UTR 5.0",
+  "混雙 知天命 UTR 6.0 組-50歲以上",
+  "混雙 耳順 UTR 6.0 組-60歲以上",
+  "混雙 UTR 6.0",
+  "混雙 UTR 7.0",
+  "混雙 公開組"
 ];
 
 // Helper to generate unique IDs
@@ -15,18 +61,27 @@ function generateId() {
 }
 
 // Check if a player is in a match right now or ended one within 30 minutes
-export function checkPlayerRestConflict(player, matches, targetTime = Date.now(), restLimit = 30) {
-  if (!player.lastMatchEndedAt) return { conflict: false, remainingMin: 0 };
-  
+export function checkPlayerRestConflict(player, stateObj, targetTime = Date.now(), restLimit = 30) {
+  const matches = stateObj.matches;
   // Check if player is currently in an active match
-  const isPlaying = matches.some(m => 
-    (m.status === 'called' || m.status === 'live') && 
-    (m.player1Id === player.id || m.player2Id === player.id || 
-     m.player1DoubleId === player.id || m.player2DoubleId === player.id)
-  );
+  const isPlaying = matches.some(m => {
+    if (m.status !== 'called' && m.status !== 'live') return false;
+    if (m.player1Id === player.id || m.player2Id === player.id) return true;
+    
+    // Substring name matching for Doubles teams formatted as "A / B"
+    const p1 = stateObj.players.find(p => p.id === m.player1Id);
+    const p2 = stateObj.players.find(p => p.id === m.player2Id);
+    
+    const p1Match = p1 && (p1.name.includes(player.name) || player.name.includes(p1.name));
+    const p2Match = p2 && (p2.name.includes(player.name) || player.name.includes(p2.name));
+    
+    return p1Match || p2Match;
+  });
   if (isPlaying) {
     return { conflict: true, reason: 'isPlaying', remainingMin: 0 };
   }
+
+  if (!player.lastMatchEndedAt) return { conflict: false, remainingMin: 0 };
 
   const elapsedMs = targetTime - player.lastMatchEndedAt;
   const elapsedMin = elapsedMs / (1000 * 60);
@@ -45,10 +100,10 @@ export function checkPlayerRestConflict(player, matches, targetTime = Date.now()
 export function getInitialState() {
   return {
     courts: [
-      { id: 'c1', name: 'A球場 (Court A)', status: 'idle', currentMatchId: null },
-      { id: 'c2', name: 'B球場 (Court B)', status: 'idle', currentMatchId: null },
-      { id: 'c3', name: 'C球場 (Court C)', status: 'idle', currentMatchId: null },
-      { id: 'c4', name: 'D球場 (Court D)', status: 'idle', currentMatchId: null }
+      { id: 'c1', name: '第1球場 (Court 1)', status: 'idle', currentMatchId: null },
+      { id: 'c2', name: '第2球場 (Court 2)', status: 'idle', currentMatchId: null },
+      { id: 'c3', name: '第3球場 (Court 3)', status: 'idle', currentMatchId: null },
+      { id: 'c4', name: '第4球場 (Court 4)', status: 'idle', currentMatchId: null }
     ],
     players: [],
     events: [...DEFAULT_EVENTS],
@@ -62,7 +117,7 @@ export function getInitialState() {
   };
 }
 
-import { db, ref, onValue, set } from './api-client.js?v=1';
+import { db, ref, onValue, set } from './api-client.js?v=2';
 
 let currentState = null;
 
@@ -86,7 +141,9 @@ export function initSystemState(onStateChangeCallback) {
           players: Array.isArray(parsed.players) ? parsed.players : defaults.players,
           events: Array.isArray(parsed.events) ? parsed.events : defaults.events,
           matches: Array.isArray(parsed.matches) ? parsed.matches : defaults.matches,
-          configs: { ...defaults.configs, ...parsed.configs }
+          configs: { ...defaults.configs, ...parsed.configs },
+          drawSizes: parsed.drawSizes || {},
+          drawSeeds: parsed.drawSeeds || {}
         };
       }
     } catch (e) {
@@ -126,10 +183,10 @@ export function initSystemState(onStateChangeCallback) {
       const parsedMatches = Array.isArray(data.matches) ? data.matches : Object.values(data.matches || []);
       const parsedCourts = Array.isArray(data.courts) ? data.courts : Object.values(data.courts || []);
       
-      // Data Normalization: Force all existing courts to use the A, B, C, D naming scheme
+      // Data Normalization: Force all existing courts to use the 1, 2, 3, 4 naming scheme
       parsedCourts.forEach((c, index) => {
-        const letter = String.fromCharCode(65 + index); // 0 -> A, 1 -> B
-        c.name = `${letter}球場 (Court ${letter})`;
+        const num = index + 1;
+        c.name = `第${num}球場 (Court ${num})`;
       });
 
       const parsedEvents = Array.isArray(data.events) ? data.events : Object.values(data.events || []);
@@ -146,7 +203,9 @@ export function initSystemState(onStateChangeCallback) {
             const mapData = data.configs && data.configs.courtMap ? data.configs.courtMap : {};
             return mapData[i] || null;
           })
-        }
+        },
+        drawSizes: data.drawSizes || {},
+        drawSeeds: data.drawSeeds || {}
       };
     } else {
       // Initialize Firebase with defaults if completely empty
@@ -215,10 +274,10 @@ export function autoScheduleMatches(state) {
 
       // Check rest conflicts
       const rLimit = state.configs.restBufferMinutes || 30;
-      const conflictP1 = checkPlayerRestConflict(p1, state.matches, now, rLimit);
-      const conflictP2 = checkPlayerRestConflict(p2, state.matches, now, rLimit);
-      const conflictP1D = p1Double ? checkPlayerRestConflict(p1Double, state.matches, now, rLimit) : { conflict: false };
-      const conflictP2D = p2Double ? checkPlayerRestConflict(p2Double, state.matches, now, rLimit) : { conflict: false };
+      const conflictP1 = checkPlayerRestConflict(p1, state, now, rLimit);
+      const conflictP2 = checkPlayerRestConflict(p2, state, now, rLimit);
+      const conflictP1D = p1Double ? checkPlayerRestConflict(p1Double, state, now, rLimit) : { conflict: false };
+      const conflictP2D = p2Double ? checkPlayerRestConflict(p2Double, state, now, rLimit) : { conflict: false };
 
       if (conflictP1.conflict || conflictP2.conflict || conflictP1D.conflict || conflictP2D.conflict) {
         return false;
@@ -256,10 +315,9 @@ export function generateBracket(state, eventName, shouldShuffle = true) {
   // Remove existing matches for this event
   state.matches = state.matches.filter(m => m.event !== eventName);
 
-  // Shuffle players randomly or sort them
-  const players = [...eventPlayers];
-  if (shouldShuffle) {
-    // Simple random shuffle for tournament seeding
+  // Shuffle players randomly (if no custom order)
+  let players = [...eventPlayers];
+  if (!(state.drawSeeds && state.drawSeeds[eventName]) && shouldShuffle) {
     for (let i = players.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [players[i], players[j]] = [players[j], players[i]];
@@ -268,8 +326,16 @@ export function generateBracket(state, eventName, shouldShuffle = true) {
 
   // Calculate bracket size (next power of 2)
   const numPlayers = players.length;
-  const roundsCount = Math.ceil(Math.log2(numPlayers));
-  const bracketSize = Math.pow(2, roundsCount);
+  let roundsCount = Math.ceil(Math.log2(numPlayers));
+  let bracketSize = Math.pow(2, roundsCount);
+
+  if (state.drawSizes && state.drawSizes[eventName]) {
+    const forcedSize = state.drawSizes[eventName];
+    if (forcedSize >= numPlayers) {
+      bracketSize = forcedSize;
+      roundsCount = Math.log2(bracketSize);
+    }
+  }
 
   // We will build matches bottom-up or top-down
   // To handle advancement, we store matches in a tree/list layout where each match has a nextMatchId.
@@ -338,38 +404,83 @@ export function generateBracket(state, eventName, shouldShuffle = true) {
   const round1Matches = roundMatches.filter(m => m.roundIndex === 1);
   let playerIdx = 0;
 
-  // Calculate number of BYEs needed
   const numByes = bracketSize - numPlayers;
   const numMatches = round1Matches.length;
-  
-  // Distribute BYEs evenly across the matches
-  const byePositions = new Set();
-  if (numByes > 0) {
-    const step = numMatches / numByes;
-    for (let i = 0; i < numByes; i++) {
-      byePositions.add(Math.floor(i * step));
+
+  if (state.drawSeeds && state.drawSeeds[eventName] && state.drawSeeds[eventName].length === bracketSize) {
+    // Custom seed order provided! Use exact slots
+    const seedOrder = state.drawSeeds[eventName];
+    for (let i = 0; i < numMatches; i++) {
+      const match = round1Matches[i];
+      let p1 = seedOrder[i * 2];
+      let p2 = seedOrder[i * 2 + 1];
+      
+      // Convert UI BYE ids (e.g. 'BYE_0') to standard 'BYE'
+      if (p1 && p1.startsWith('BYE')) p1 = 'BYE';
+      if (p2 && p2.startsWith('BYE')) p2 = 'BYE';
+      
+      match.player1Id = p1 || null;
+      match.player2Id = p2 || null;
+      handleByeAdvancement(match, roundMatches);
+    }
+  } else {
+    // Default behavior: Distribute BYEs evenly
+    const byePositions = new Set();
+    if (numByes > 0) {
+      const step = numMatches / numByes;
+      for (let i = 0; i < numByes; i++) {
+        byePositions.add(Math.floor(i * step));
+      }
+    }
+
+    for (let i = 0; i < numMatches; i++) {
+      const match = round1Matches[i];
+
+      if (byePositions.has(i)) {
+        // This match gets a BYE
+        match.player1Id = players[playerIdx++] ? players[playerIdx - 1].id : null;
+        match.player2Id = 'BYE';
+      } else {
+        // This match gets 2 real players
+        match.player1Id = players[playerIdx++] ? players[playerIdx - 1].id : null;
+        match.player2Id = players[playerIdx++] ? players[playerIdx - 1].id : null;
+      }
+
+      handleByeAdvancement(match, roundMatches);
     }
   }
 
-  for (let i = 0; i < numMatches; i++) {
-    const match = round1Matches[i];
-
-    if (byePositions.has(i)) {
-      // This match gets a BYE
-      match.player1Id = players[playerIdx++].id;
-      match.player2Id = 'BYE';
-    } else {
-      // This match gets 2 real players
-      match.player1Id = players[playerIdx++].id;
-      match.player2Id = players[playerIdx++].id;
-    }
-
-    // Handle BYE immediate advancement
-    handleByeAdvancement(match, roundMatches);
-  }
+  // Extract actual round 1 order and save to drawSeeds to keep modal in sync
+  if (!state.drawSeeds) state.drawSeeds = {};
+  const currentDraw = [];
+  round1Matches.forEach(m => {
+    currentDraw.push(m.player1Id || 'BYE');
+    currentDraw.push(m.player2Id || 'BYE');
+  });
+  state.drawSeeds[eventName] = currentDraw;
 
   // Append new matches to state
   state.matches = [...state.matches, ...roundMatches];
+  
+  // Enforce pre-existing check-in forfeits that were made before bracket generation
+  state.players.forEach(p => {
+    if (p.checkInStatus && p.checkInStatus[eventName] === 'forfeited') {
+      const pMatches = state.matches.filter(m => m.event === eventName && m.status === 'scheduled' && (m.player1Id === p.id || m.player2Id === p.id));
+      pMatches.forEach(m => {
+        m.status = 'defaulted';
+        m.defaultedPlayerId = p.id;
+        const opponentId = m.player1Id === p.id ? m.player2Id : m.player1Id;
+        if (opponentId && opponentId !== 'BYE') {
+          m.winnerId = opponentId;
+          advanceWinner(m, opponentId, state.matches);
+        } else if (opponentId === 'BYE') {
+          m.winnerId = 'BYE';
+          advanceWinner(m, 'BYE', state.matches);
+        }
+      });
+    }
+  });
+
   saveState(state);
 }
 
@@ -413,6 +524,13 @@ export function advanceWinner(completedMatch, winnerId, allMatches) {
   // Check if the next match now has a BYE on the other side
   if (nextMatch.player1Id === 'BYE' || nextMatch.player2Id === 'BYE') {
     handleByeAdvancement(nextMatch, allMatches);
+  } else if (nextMatch.status === 'defaulted') {
+    // If the next match was already marked as defaulted (e.g. opponent forfeited at check-in)
+    const nextWinner = nextMatch.player1Id === nextMatch.defaultedPlayerId ? nextMatch.player2Id : nextMatch.player1Id;
+    if (nextWinner) {
+      nextMatch.winnerId = nextWinner;
+      advanceWinner(nextMatch, nextWinner, allMatches);
+    }
   }
 }
 

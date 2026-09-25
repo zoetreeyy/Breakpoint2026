@@ -76,108 +76,120 @@ export function renderPlayerSearch(state, nameQuery) {
     return;
   }
   
-  const player = state.players.find(p => p.name.trim() === nameQuery.trim());
+  const matchedPlayers = state.players.filter(p => p.name.toLowerCase().includes(nameQuery.trim().toLowerCase()));
   
   container.classList.remove('hidden');
   
-  if (!player) {
+  if (matchedPlayers.length === 0) {
     container.innerHTML = `
       <div class="text-center py-2 text-danger">
-        <strong>⚠️ 找不到名為「${nameQuery}」的選手</strong>
-        <p class="small text-secondary mt-2">請確認輸入字眼是否完全相符，或洽大會服務台詢問。</p>
+        <strong>⚠️ 找不到包含「${nameQuery}」的選手</strong>
+        <p class="small text-secondary mt-2">請確認輸入字眼是否相符，或洽大會服務台詢問。</p>
       </div>
     `;
     return;
   }
   
-  // Find player's matches
-  const activeMatches = state.matches.filter(m => 
-    (m.status === 'called' || m.status === 'live') && 
-    (m.player1Id === player.id || m.player2Id === player.id)
-  );
-  
-  const upcomingMatches = state.matches.filter(m => 
-    m.status === 'scheduled' && 
-    (m.player1Id === player.id || m.player2Id === player.id)
-  );
-  
-  let matchStatusHtml = '';
-  if (activeMatches.length > 0) {
-    const am = activeMatches[0];
-    const court = state.courts.find(c => c.id === am.courtId);
-    const courtName = court ? court.name : '指定球場';
-    const statusText = am.status === 'called' ? '已召集（10分鐘點名中）' : '正在進行比賽';
-    const statusClass = am.status === 'called' ? 'badge-warning' : 'badge-success';
-    matchStatusHtml = `
-      <div class="mt-3 p-3 bg-opacity-10 border border-success rounded" style="background: rgba(16,185,129,0.05);">
-        <span class="badge ${statusClass}">${statusText}</span>
-        <div class="mt-2 font-bold" style="font-size: 1.1rem; color: var(--primary);">
-          🏟️ 您的比賽正在 <span class="text-accent">${courtName}</span> 進行！
-        </div>
-        <p class="small text-secondary mt-1">對戰對手：${getPlayerNameById(state, am.player1Id === player.id ? am.player2Id : am.player1Id)}</p>
-      </div>
-    `;
-  } else if (upcomingMatches.length > 0) {
-    matchStatusHtml = `
-      <div class="mt-3 p-3 bg-opacity-5 border border-info rounded" style="background: rgba(6,180,212,0.05);">
-        <span class="badge badge-info">待安排賽程</span>
-        <p class="mt-2 font-bold text-primary">您有一場即將進行的比賽：</p>
-        <div class="small text-secondary mt-1">
-          賽事：${upcomingMatches[0].event} (${upcomingMatches[0].round})<br>
-          預估將會安排在後續的空閒球場進行。
-        </div>
-      </div>
-    `;
-  } else {
-    matchStatusHtml = `
-      <div class="mt-3 p-3 bg-opacity-5 border border-secondary rounded" style="background: var(--bg-secondary);">
-        <span class="badge badge-success">無待進行賽事</span>
-        <p class="mt-2 small text-secondary">您目前沒有進行中或待排定的淘汰賽程（可能已完賽或尚未產生下一輪賽事）。</p>
-      </div>
-    `;
-  }
 
-  container.innerHTML = `
-    <div class="flex-between">
-      <h4 style="font-size: 1.2rem; font-weight: 800; color: var(--accent);">👤 ${player.name}</h4>
-    </div>
+  let finalHtml = '';
+  
+  matchedPlayers.forEach(player => {
+    // Find player's matches
+    const activeMatches = state.matches.filter(m => 
+      (m.status === 'called' || m.status === 'live') && 
+      (m.player1Id === player.id || m.player2Id === player.id)
+    );
     
-    <div class="mt-3 grid gap-2" style="font-size: 0.9rem;">
-      <div><strong>🎖️ 報名項目與報到狀態：</strong></div>
-      <div class="flex" style="flex-wrap: wrap; gap: 8px;">
-        ${(player.events || []).map(ev => {
-          const isCheckedIn = player.checkInStatus && player.checkInStatus[ev];
-          if (isCheckedIn) {
-            return `<span class="badge badge-success">✅ ${ev} (已報到)</span>`;
-          } else {
-            return `<button class="btn btn-sm btn-accent btn-self-checkin-event" data-id="${player.id}" data-event="${ev}" style="padding: 4px 10px; font-size: 0.85rem; font-weight: 600;">📍 報到 ${ev}</button>`;
-          }
-        }).join('')}
-      </div>
-      <div class="mt-2">
-        <strong>📸 大會攝影服務：</strong>
-        <span class="badge ${player.hasPhotography ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">
-          ${player.hasPhotography ? '✅ 已購買' : '無'}
-        </span>
-        <strong>🎾 UTR 層級：</strong>
-        <span class="badge badge-info">${player.utr || '未提供'}</span>
-      </div>
-      <div class="mt-2">
-        <strong>🎁 參賽贈品：</strong>
-        <span class="text-secondary">${player.gift}</span> 
-        <span class="badge ${player.giftClaimed ? 'badge-success' : 'badge-warning'}">
-          ${player.giftClaimed ? '已領取 Claimed' : '未領取 Unclaimed'}
-        </span>
-        ${!player.giftClaimed && player.gift && player.gift !== '無' ? `
-          <button class="btn btn-sm btn-outline ml-2" id="btn-claim-gift" data-id="${player.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-left: 8px;">
-            向工作人員領取
-          </button>
-        ` : ''}
-      </div>
-    </div>
+    const upcomingMatches = state.matches.filter(m => 
+      m.status === 'scheduled' && 
+      (m.player1Id === player.id || m.player2Id === player.id)
+    );
     
-    ${matchStatusHtml}
-  `;
+    let matchStatusHtml = '';
+    if (activeMatches.length > 0) {
+      const am = activeMatches[0];
+      const court = state.courts.find(c => c.id === am.courtId);
+      const courtName = court ? court.name : '指定球場';
+      const statusText = am.status === 'called' ? '已召集 Called (10 min check-in)' : '正在進行比賽 Match In Progress';
+      const statusClass = am.status === 'called' ? 'badge-warning' : 'badge-success';
+      matchStatusHtml = `
+        <div class="mt-3 p-3 bg-opacity-10 border border-success rounded" style="background: rgba(46,204,113,0.1);">
+          <span class="badge ${statusClass}">${statusText}</span>
+          <p class="mt-2 font-bold text-primary">您必須立即前往 (Please report to)：${courtName}</p>
+          <div class="small text-secondary mt-1">賽事 (Event)：${am.event} (${am.round})</div>
+        </div>
+      `;
+    } else if (upcomingMatches.length > 0) {
+      matchStatusHtml = `
+        <div class="mt-3 p-3 bg-opacity-5 border border-info rounded" style="background: rgba(6,180,212,0.05);">
+          <span class="badge badge-info">待安排賽程 To Be Scheduled</span>
+          <p class="mt-2 font-bold text-primary">您有一場即將進行的比賽 (You have an upcoming match)：</p>
+          <div class="small text-secondary mt-1">
+            賽事 (Event)：${upcomingMatches[0].event} (${upcomingMatches[0].round})<br>
+            預估將會安排在後續的空閒球場進行。(Estimated to be scheduled on the next available court.)
+          </div>
+        </div>
+      `;
+    } else {
+      matchStatusHtml = `
+        <div class="mt-3 p-3 bg-opacity-5 border border-secondary rounded" style="background: var(--bg-secondary);">
+          <span class="badge badge-success">無待進行賽事 No Upcoming Matches</span>
+          <p class="mt-2 small text-secondary">您目前沒有進行中或待排定的淘汰賽程（可能已完賽或尚未產生下一輪賽事）。<br>You currently have no active or scheduled matches.</p>
+        </div>
+      `;
+    }
+
+    finalHtml += `
+      <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+        <div class="flex-between">
+          <h4 style="font-size: 1.2rem; font-weight: 800; color: var(--accent);">👤 ${player.name}</h4>
+        </div>
+        
+        <div class="mt-3 grid gap-2" style="font-size: 0.9rem;">
+          <div><strong>🎖️ 報名項目與報到狀態 (Events & Check-in Status)：</strong></div>
+          <div class="flex" style="flex-wrap: wrap; gap: 8px;">
+            ${(player.events || []).map(ev => {
+              const isCheckedIn = player.checkInStatus && player.checkInStatus[ev];
+              if (isCheckedIn) {
+                return `<span class="badge badge-success">✅ ${ev} (已報到 Checked-in)</span>`;
+              } else {
+                const isCheckInOpen = state.configs && state.configs.eventsCheckIn && state.configs.eventsCheckIn[ev];
+                if (!isCheckInOpen) {
+                  return `<span class="badge" style="background: #e2e8f0; color: #475569; padding: 4px 10px; font-size: 0.85rem; font-weight: 600; border: 1px solid #cbd5e1;">⏳ 尚未開放報到 Not Open Yet (${ev})</span>`;
+                }
+                return `<button class="btn btn-sm btn-accent btn-self-checkin-event" data-id="${player.id}" data-event="${ev}" style="padding: 4px 10px; font-size: 0.85rem; font-weight: 600;">📍 報到 Check-in ${ev}</button>`;
+              }
+            }).join('')}
+          </div>
+          <div class="mt-2">
+            <strong>📸 大會攝影服務 (Photography)：</strong>
+            <span class="badge ${player.hasPhotography ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">
+              ${player.hasPhotography ? '✅ 已購買 (Yes)' : '無 (No)'}
+            </span>
+            <strong>🎾 UTR 層級 (UTR)：</strong>
+            <span class="badge badge-info">${player.utr || '未提供 N/A'}</span>
+          </div>
+          <div class="mt-2">
+            <strong>🎁 參賽贈品 (Gift)：</strong>
+            <span class="text-secondary">${player.gift}</span> 
+            ${player.gift && player.gift !== '無' ? `
+            <span class="badge ${player.giftClaimed ? 'badge-success' : 'badge-warning'}">
+              ${player.giftClaimed ? '已領取 Claimed' : '未領取 Unclaimed'}
+            </span>` : ''}
+            ${!player.giftClaimed && player.gift && player.gift !== '無' ? `
+              <button class="btn btn-sm btn-outline ml-2" id="btn-claim-gift" data-id="${player.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-left: 8px;">
+                向工作人員領取 (Claim from Staff)
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        
+        ${matchStatusHtml}
+      </div>
+    `;
+  });
+
+  container.innerHTML = finalHtml;
 }
 
 // Render Courts in Player View
@@ -194,8 +206,10 @@ export function renderPlayerCourts(state) {
     if (court.status === 'occupied' && court.currentMatchId) {
       const match = state.matches.find(m => m.id === court.currentMatchId);
       if (match) {
-        const p1Name = getPlayerNameById(state, match.player1Id);
-        const p2Name = getPlayerNameById(state, match.player2Id);
+        const p1 = state.players.find(p => p.id === match.player1Id);
+        const p2 = state.players.find(p => p.id === match.player2Id);
+        const p1Name = p1 ? p1.name : (match.player1Id === 'BYE' ? 'BYE' : '未知');
+        const p2Name = p2 ? p2.name : (match.player2Id === 'BYE' ? 'BYE' : '未知');
         const scoreStr = formatScore(match.score);
         
         if (match.status === 'called') {
@@ -276,14 +290,14 @@ export function renderPlayerUpcoming(state) {
   const tbody = document.getElementById('player-upcoming-matches');
   tbody.innerHTML = '';
   
-  let upcoming = state.matches.filter(m => m.status === 'scheduled');
+  let upcoming = state.matches.filter(m => m.status === 'scheduled' && m.player1Id !== 'BYE' && m.player2Id !== 'BYE');
 
   const filterSelect = document.getElementById('player-queue-filter');
   const currentFilter = filterSelect ? filterSelect.value : 'all';
 
   // Update filter dropdown options dynamically from upcoming matches
   if (filterSelect) {
-    const uniqueEvents = [...new Set(state.matches.filter(m => m.status === 'scheduled').map(m => m.event))];
+    const uniqueEvents = [...new Set(state.matches.filter(m => m.status === 'scheduled' && m.player1Id !== 'BYE' && m.player2Id !== 'BYE').map(m => m.event))];
     const optionsHtml = ['<option value="all">全部賽事項目</option>']
       .concat(uniqueEvents.map(ev => `<option value="${ev}" ${ev === currentFilter ? 'selected' : ''}>${ev}</option>`));
     filterSelect.innerHTML = optionsHtml.join('');
@@ -308,16 +322,18 @@ export function renderPlayerUpcoming(state) {
   let courtAvailabilities = [];
   if (totalCourts > 0) {
     state.courts.forEach(court => {
+      const baseTime = Date.now();
+      
       if (court.status === 'idle' || !court.currentMatchId) {
-        courtAvailabilities.push(Date.now());
+        courtAvailabilities.push(baseTime);
       } else {
         const activeMatch = state.matches.find(m => m.id === court.currentMatchId);
         if (activeMatch && activeMatch.startedAt) {
           const elapsed = Date.now() - activeMatch.startedAt;
           const remaining = Math.max(0, avgMatchDurationMs - elapsed);
-          courtAvailabilities.push(Date.now() + remaining);
+          courtAvailabilities.push(Date.now() + remaining); // active matches still relative to now
         } else {
-          courtAvailabilities.push(Date.now() + avgMatchDurationMs);
+          courtAvailabilities.push(baseTime + avgMatchDurationMs);
         }
       }
     });
@@ -366,8 +382,8 @@ export function renderPlayerUpcoming(state) {
     
     // Check conflicts
     const rLimit = state.configs.restBufferMinutes || 30;
-    let conflictP1 = p1 ? checkPlayerRestConflict(p1, state.matches, Date.now(), rLimit) : { conflict: false };
-    let conflictP2 = p2 ? checkPlayerRestConflict(p2, state.matches, Date.now(), rLimit) : { conflict: false };
+    let conflictP1 = p1 ? checkPlayerRestConflict(p1, state, Date.now(), rLimit) : { conflict: false };
+    let conflictP2 = p2 ? checkPlayerRestConflict(p2, state, Date.now(), rLimit) : { conflict: false };
     
     let conflictText = '';
     if (conflictP1.conflict && conflictP1.reason === 'restBuffer') {
@@ -432,7 +448,13 @@ export function renderPlayerUpcoming(state) {
       courtAvailabilities[0] = matchStartTime + avgMatchDurationMs;
     }
 
+    const isEventCheckInOpen = state.configs.eventsCheckIn && state.configs.eventsCheckIn[ev] === true;
+    if (!isEventCheckInOpen) {
+      timeText = '尚未開放報到';
+    }
+
     const tr = document.createElement('tr');
+    tr.className = 'setup-player-row';
     tr.innerHTML = `
       <td style="white-space: nowrap;">${shortEvent}</td>
       <td style="white-space: nowrap;"><span class="badge badge-info">${shortRound}</span></td>
@@ -566,6 +588,20 @@ export function renderPlayerBrackets(state) {
         badgeSpan.textContent = '裁定棄賽';
         headerDiv.appendChild(badgeSpan);
       }
+      
+      if ((match.status === 'completed' || match.status === 'defaulted') && match.player1Id !== 'BYE' && match.player2Id !== 'BYE') {
+        const undoBtn = document.createElement('span');
+        undoBtn.style.fontSize = '12px';
+        undoBtn.style.marginLeft = 'auto';
+        undoBtn.style.cursor = 'pointer';
+        undoBtn.style.opacity = '0.15';
+        undoBtn.innerHTML = '⚙️';
+        undoBtn.setAttribute('title', '系統管理');
+        undoBtn.setAttribute('data-action', 'admin-match-options');
+        undoBtn.setAttribute('data-match-id', match.id);
+        headerDiv.appendChild(undoBtn);
+      }
+      
       matchCard.appendChild(headerDiv);
 
       const createPlayerRow = (pName, pClass, scoreHtml) => {
@@ -600,6 +636,83 @@ export function renderPlayerBrackets(state) {
 // Render Staff Dashboard (Stats, Check-in, Queue, Court Deployment)
 export function renderStaffDashboard(state) {
   // Sync quick rest buffer & avg match input
+  // Render Event Check-in Controls
+  const eventCheckinContainer = document.getElementById('event-checkin-controls');
+  if (eventCheckinContainer) {
+    const activeEvents = [...new Set(state.players.reduce((acc, p) => acc.concat(p.events || []), []))];
+    const exactOrder = [
+      "男單 UTR 2.0",
+      "男單 UTR 3.0",
+      "breakpoint® 男學員組 UTR 3.0",
+      "男單 UTR 4.0",
+      "男單 UTR 5.0",
+      "男單 UTR 6.0",
+      "男單 知天命 UTR 6.0",
+      "男單 UTR 7.0",
+      "男單 UTR 8.0",
+      "男單 U12",
+      "男單 U14",
+      "男單 U16",
+      "男單 公開組",
+      "女單 UTR 2.0",
+      "女單 UTR 3.0",
+      "breakpoint® 女學員組 UTR 3.0",
+      "女單 UTR 4.0",
+      "女單 UTR 5.0",
+      "女單 知天命 UTR 6.0",
+      "女單 UTR 6.0",
+      "女單 UTR 7.0",
+      "女單 U12",
+      "女單 U14",
+      "女單 U16",
+      "女單 公開組",
+      "U8 綠球組",
+      "U10 綠球組",
+      "男雙 UTR 2.0",
+      "男雙 UTR 4.0",
+      "男雙 UTR 5.0",
+      "男雙 UTR 6.0",
+      "男雙 UTR 7.0",
+      "男雙 公開組",
+      "女雙 UTR 2.0",
+      "女雙 UTR 3.0",
+      "女雙 UTR 4.0",
+      "女雙 UTR 5.0",
+      "女雙 UTR 6.0",
+      "女雙 UTR 7.0",
+      "女雙 公開組",
+      "混雙 UTR 2.0",
+      "混雙 UTR 3.0",
+      "混雙 UTR 4.0",
+      "混雙 UTR 5.0",
+      "混雙 知天命 UTR 6.0 組-50歲以上",
+      "混雙 耳順 UTR 6.0 組-60歲以上",
+      "混雙 UTR 6.0",
+      "混雙 UTR 7.0",
+      "混雙 公開組"
+    ];
+    
+    activeEvents.sort((a, b) => {
+      let idxA = exactOrder.indexOf(a);
+      let idxB = exactOrder.indexOf(b);
+      
+      // If not in list, send to bottom
+      if (idxA === -1) idxA = 999;
+      if (idxB === -1) idxB = 999;
+      
+      if (idxA !== idxB) return idxA - idxB;
+      return a.localeCompare(b, 'zh-TW', { numeric: true });
+    });
+    if (activeEvents.length === 0) {
+      eventCheckinContainer.innerHTML = '<span class="text-secondary small">尚無任何賽程，無法開放報到。</span>';
+    } else {
+      eventCheckinContainer.innerHTML = activeEvents.map(ev => {
+        const isOpen = state.configs && state.configs.eventsCheckIn && state.configs.eventsCheckIn[ev];
+        return `<button class="btn btn-sm ${isOpen ? 'btn-success' : 'btn-outline'}" onclick="window.toggleEventCheckIn('${ev}')">${ev}: ${isOpen ? '開放中 ✅' : '未開放 🔒'}</button>`;
+      }).join('');
+    }
+  }
+  
   const quickRestInput = document.getElementById('quick-rest-buffer');
   if (quickRestInput) {
     quickRestInput.value = state.configs.restBufferMinutes || 30;
@@ -630,8 +743,7 @@ export function renderStaffDashboard(state) {
   checkinTbody.innerHTML = '';
 
   const filteredPlayers = state.players.filter(p => 
-    p.name.toLowerCase().includes(searchInput) || 
-    p.phone.includes(searchInput)
+    p.name.toLowerCase().includes(searchInput)
   );
 
   if (filteredPlayers.length === 0) {
@@ -639,31 +751,43 @@ export function renderStaffDashboard(state) {
   } else {
     filteredPlayers.forEach(player => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><strong>${player.name}</strong><br><small class="text-secondary">${player.phone}</small></td>
+    tr.className = 'setup-player-row';
+    tr.innerHTML = `
+        <td><strong>${player.name}</strong></td>
         <td class="small text-secondary">${(player.events || []).join('<br>') || '無'}</td>
         <td>
-          <span class="small font-bold">${player.gift}</span>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span class="small font-bold">${player.gift}</span>
+            ${(() => {
+              if (!player.gift || player.gift === '無') return '';
+              const anyCheckedIn = (player.events || []).some(ev => player.checkInStatus && player.checkInStatus[ev]) || player.checkedIn;
+              return `<button class="btn btn-sm ${player.giftClaimed ? 'btn-secondary' : 'btn-outline'}" data-action="toggle-gift" data-id="${player.id}" style="padding: 2px 6px; font-size: 0.8rem;">
+                ${player.giftClaimed ? '🎁 已領取' : '🎁 點擊領取'}
+              </button>`;
+            })()}
+          </div>
         </td>
         <td>${player.hasPhotography ? '📷 是' : '無'}</td>
         <td>${player.utr || '無'}</td>
         <td>
           <div style="display: flex; flex-direction: column; gap: 4px;">
             ${(player.events || []).map(ev => {
-              const checked = player.checkInStatus && player.checkInStatus[ev];
-              return `<button class="btn btn-sm ${checked ? 'btn-primary' : 'btn-outline-accent'}" data-action="toggle-checkin" data-id="${player.id}" data-event="${ev}" style="padding: 2px 6px; font-size: 0.8rem;">
-                ${checked ? `✅ ${ev} 已報到` : `🔲 ${ev} 點擊報到`}
-              </button>`;
+              const status = player.checkInStatus && player.checkInStatus[ev];
+              const isChecked = status === true;
+              const isForfeit = status === 'forfeited';
+              
+              if (isForfeit) {
+                return `<span class="badge badge-danger" style="margin-bottom: 2px;">${ev} 已棄賽</span>`;
+              }
+              
+              return `<div style="display: flex; gap: 4px; align-items: center;">
+                <button class="btn btn-sm ${isChecked ? 'btn-primary' : 'btn-outline-accent'}" data-action="toggle-checkin" data-id="${player.id}" data-event="${ev}" style="padding: 2px 6px; font-size: 0.8rem; flex: 1;">
+                  ${isChecked ? `✅ ${ev} 已報到` : `🔲 ${ev} 點擊報到`}
+                </button>
+                ${!isChecked ? `<button class="btn btn-sm btn-outline-danger" data-action="forfeit-event" data-id="${player.id}" data-event="${ev}" style="padding: 2px 6px; font-size: 0.8rem;" title="未報到判定棄賽">❌ 未報到判定棄賽</button>` : ''}
+              </div>`;
             }).join('')}
           </div>
-        </td>
-        <td>
-          ${(() => {
-            const anyCheckedIn = (player.events || []).some(ev => player.checkInStatus && player.checkInStatus[ev]) || player.checkedIn;
-            return `<button class="btn btn-sm ${player.giftClaimed ? 'btn-secondary' : 'btn-outline'}" data-action="toggle-gift" data-id="${player.id}" ${!anyCheckedIn ? 'disabled' : ''}>
-              ${player.giftClaimed ? '🎁 已領取' : '🎁 點擊領取'}
-            </button>`;
-          })()}
         </td>
       `;
       checkinTbody.appendChild(tr);
@@ -713,14 +837,14 @@ export function renderStaffDashboard(state) {
   const queueTbody = document.getElementById('staff-match-queue-tbody');
   queueTbody.innerHTML = '';
 
-  let pendingMatches = state.matches.filter(m => m.status === 'scheduled');
+  let pendingMatches = state.matches.filter(m => m.status === 'scheduled' && m.player1Id !== 'BYE' && m.player2Id !== 'BYE');
 
   const filterSelect = document.getElementById('staff-queue-filter');
   const currentFilter = filterSelect ? filterSelect.value : 'all';
 
   // Update filter dropdown options dynamically from pending matches
   if (filterSelect) {
-    const uniqueEvents = [...new Set(state.matches.filter(m => m.status === 'scheduled').map(m => m.event))];
+    const uniqueEvents = [...new Set(state.matches.filter(m => m.status === 'scheduled' && m.player1Id !== 'BYE' && m.player2Id !== 'BYE').map(m => m.event))];
     const optionsHtml = ['<option value="all">全部賽事項目</option>']
       .concat(uniqueEvents.map(ev => `<option value="${ev}" ${ev === currentFilter ? 'selected' : ''}>${ev}</option>`));
     filterSelect.innerHTML = optionsHtml.join('');
@@ -734,13 +858,30 @@ export function renderStaffDashboard(state) {
   if (pendingMatches.length === 0) {
     queueTbody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">尚無待排賽程（或全部賽事已排定完畢）。</td></tr>`;
   } else {
-    // Sort pending matches: playable matches (both players known) at the top, TBD at the bottom
-    const sortedPending = [...pendingMatches].sort((a, b) => {
-      const aPlayable = a.player1Id && a.player2Id && a.player1Id !== 'BYE' && a.player2Id !== 'BYE';
-      const bPlayable = b.player1Id && b.player2Id && b.player1Id !== 'BYE' && b.player2Id !== 'BYE';
+    // Sort pending matches: fully ready first, then playable (known players), then TBD
+    const isPlayerCheckedIn = (p, ev) => p && (p.checkInStatus ? p.checkInStatus[ev] : p.checkedIn);
+    const getMatchReadyScore = (match) => {
+      if (!match.player1Id || !match.player2Id || match.player1Id === 'BYE' || match.player2Id === 'BYE') return 0; // TBD or BYE
       
-      if (aPlayable && !bPlayable) return -1;
-      if (!aPlayable && bPlayable) return 1;
+      const p1 = state.players.find(p => p.id === match.player1Id);
+      const p2 = state.players.find(p => p.id === match.player2Id);
+      if (!p1 || !p2) return 0; // TBD
+      
+      const rLimit = state.configs.restBufferMinutes || 30;
+      const p1Ready = isPlayerCheckedIn(p1, match.event) && !checkPlayerRestConflict(p1, state, Date.now(), rLimit).conflict;
+      const p2Ready = isPlayerCheckedIn(p2, match.event) && !checkPlayerRestConflict(p2, state, Date.now(), rLimit).conflict;
+      
+      if (p1Ready && p2Ready) return 2; // Fully ready to schedule
+      return 1; // Playable but waiting for check-in/rest
+    };
+
+    const sortedPending = [...pendingMatches].sort((a, b) => {
+      const scoreA = getMatchReadyScore(a);
+      const scoreB = getMatchReadyScore(b);
+      
+      if (scoreA !== scoreB) {
+        return scoreB - scoreA; // Higher score first
+      }
       
       // Sort by roundIndex (Round 1 first)
       return a.roundIndex - b.roundIndex;
@@ -776,8 +917,8 @@ export function renderStaffDashboard(state) {
 
         // Check rest constraints
         const rLimit = state.configs.restBufferMinutes || 30;
-        const p1Rest = checkPlayerRestConflict(p1, state.matches, Date.now(), rLimit);
-        const p2Rest = checkPlayerRestConflict(p2, state.matches, Date.now(), rLimit);
+        const p1Rest = checkPlayerRestConflict(p1, state, Date.now(), rLimit);
+        const p2Rest = checkPlayerRestConflict(p2, state, Date.now(), rLimit);
 
         let restViolation = false;
         if (p1Rest.conflict && p1Rest.reason === 'restBuffer') {
@@ -814,7 +955,8 @@ export function renderStaffDashboard(state) {
          </select>`;
 
       const tr = document.createElement('tr');
-      tr.innerHTML = `
+    tr.className = 'setup-player-row';
+    tr.innerHTML = `
         <td><strong>${match.event}</strong><br><span class="badge badge-info">${match.round}</span></td>
         <td><strong>${p1Name}</strong><br><span class="text-muted">vs</span><br><strong>${p2Name}</strong></td>
         <td class="small">${statusDescriptionHtml}</td>
@@ -865,6 +1007,7 @@ export function renderStaffDashboard(state) {
     }
 
     const tr = document.createElement('tr');
+    tr.className = 'setup-player-row';
     tr.innerHTML = `
       <td><strong>${eventName}</strong></td>
       <td class="text-accent font-bold">${winnerName}</td>
@@ -874,6 +1017,24 @@ export function renderStaffDashboard(state) {
     `;
     winnersTbody.appendChild(tr);
   });
+
+  // Sync Announcement
+  const annInput = document.getElementById('staff-announcement-input');
+  const annBanner = document.getElementById('player-announcement-banner');
+  const annText = document.getElementById('player-announcement-text');
+  
+  const msg = state.configs && state.configs.announcementMessage ? state.configs.announcementMessage : "";
+  if (annInput) annInput.value = msg;
+  
+  if (annBanner && annText) {
+    if (msg) {
+      annText.innerText = msg;
+      annBanner.style.display = 'block';
+    } else {
+      annBanner.style.display = 'none';
+    }
+  }
+
 }
 
 // Render Referee Panel
@@ -894,6 +1055,8 @@ export function renderRefereePanel(state) {
       if (match) {
         const p1Name = getPlayerNameById(state, match.player1Id);
         const p2Name = getPlayerNameById(state, match.player2Id);
+        const p1 = state.players.find(p => p.id === match.player1Id);
+        const p2 = state.players.find(p => p.id === match.player2Id);
         
         if (match.status === 'called') {
           // Timer countdown (10 mins)
@@ -914,9 +1077,15 @@ export function renderRefereePanel(state) {
             <div class="match-details">
               <span class="badge badge-warning">📢 大會點名召集 (10分內需抵達)</span>
               <div class="players-versus mt-2">
-                <span>${p1Name}</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                  <span>${p1Name}</span>
+                  ${p1 && p1.hasPhotography ? '<span style="font-size: 0.7rem; color: #666; font-weight: 500; margin-top: 2px;">📸 需攝影</span>' : ''}
+                </div>
                 <span class="vs">VS</span>
-                <span>${p2Name}</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                  <span>${p2Name}</span>
+                  ${p2 && p2.hasPhotography ? '<span style="font-size: 0.7rem; color: #666; font-weight: 500; margin-top: 2px;">📸 需攝影</span>' : ''}
+                </div>
               </div>
               <div class="match-event">${match.event}</div>
               <div class="timer-container called-timer mt-1">
@@ -947,9 +1116,15 @@ export function renderRefereePanel(state) {
             <div class="match-details">
               <span class="badge badge-success">🎾 比賽進行中</span>
               <div class="players-versus mt-2">
-                <span>${p1Name}</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                  <span>${p1Name}</span>
+                  ${p1 && p1.hasPhotography ? '<span style="font-size: 0.7rem; color: #666; font-weight: 500; margin-top: 2px;">📸 需攝影</span>' : ''}
+                </div>
                 <span class="vs">VS</span>
-                <span>${p2Name}</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                  <span>${p2Name}</span>
+                  ${p2 && p2.hasPhotography ? '<span style="font-size: 0.7rem; color: #666; font-weight: 500; margin-top: 2px;">📸 需攝影</span>' : ''}
+                </div>
               </div>
               <div class="match-event">${match.event}</div>
               <div class="live-score-badge mt-2">${scoreStr || '0 - 0'}</div>
@@ -1039,8 +1214,10 @@ export function renderSetupPlayers(state) {
   // List all players
   state.players.forEach(p => {
     const tr = document.createElement('tr');
+    tr.className = 'setup-player-row';
     tr.innerHTML = `
       <td><strong>${p.name}</strong></td>
+      <td>${p.utrName || '無'}</td>
       <td>${p.phone || '無'}</td>
       <td class="small">${p.events.join(', ') || '無'}</td>
       <td>${p.gift}</td>
@@ -1056,6 +1233,12 @@ export function renderSetupPlayers(state) {
 
   // Also sync inputs
   document.getElementById('setup-events-list').value = state.events.join('\n');
+  
+  // Re-apply search filter if there is one
+  const searchInput = document.getElementById('setup-player-search');
+  if (searchInput && searchInput.value) {
+    window.filterSetupPlayers(searchInput.value);
+  }
 }
 
 // Helper: Get Player Name by ID
@@ -1398,3 +1581,17 @@ function drawGoldCorner(ctx, x, y, size) {
   ctx.lineTo(x + size * factorX, y);
   ctx.stroke();
 }
+
+
+window.filterSetupPlayers = function(query) {
+  const q = query.toLowerCase().trim();
+  const rows = document.querySelectorAll('.setup-player-row');
+  rows.forEach(row => {
+    const text = row.innerText.toLowerCase();
+    if (text.includes(q)) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+};
